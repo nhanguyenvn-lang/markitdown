@@ -540,5 +540,70 @@ def test_xlsx_show_zeroes_rename_is_scoped_to_sheet_view_tags() -> None:
     assert b'<customSheetView showZeroes="0"/>' in repaired
 
 
+def _convert_workbook(tmp_path, build_rows, suffix=".xlsx"):
+    """Build a one-sheet workbook from rows and convert it with MarkItDown."""
+    from markitdown import MarkItDown
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    for row in build_rows:
+        sheet.append(row)
+    path = tmp_path / f"empty-cells{suffix}"
+    workbook.save(str(path))
+
+    return MarkItDown().convert(str(path)).markdown
+
+
+def test_xlsx_empty_cells_render_as_empty_cells(tmp_path) -> None:
+    markdown = _convert_workbook(
+        tmp_path,
+        [
+            ["Name", "Age", "City"],
+            ["Bob", None, "LA"],
+            ["Alice", 30, None],
+        ],
+    )
+
+    # An empty spreadsheet cell stays empty, like the CSV converter renders it
+    assert "| Bob |  | LA |" in markdown
+    assert "| Alice | 30.0 |  |" in markdown
+    assert "NaN" not in markdown
+
+
+def test_xlsx_empty_cells_in_date_columns_render_as_empty(tmp_path) -> None:
+    # na_rep only covers the NaN formatter; a datetime column's NaT would
+    # otherwise surface as literal "NaT" text (reporter's case).
+    from datetime import date
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.append(["Name", "When"])
+    sheet.append(["Bob", date(2024, 1, 1)])
+    sheet.append(["Alice", None])
+    path = tmp_path / "date-cells.xlsx"
+    workbook.save(str(path))
+
+    markdown = MarkItDown().convert(str(path)).markdown
+
+    assert "| Bob |" in markdown
+    assert "| Alice |  |" in markdown
+    assert "NaT" not in markdown
+
+
+def test_xls_empty_cells_render_as_empty_cells(tmp_path) -> None:
+    pytest.importorskip("xlrd")
+    markdown = _convert_workbook(
+        tmp_path,
+        [
+            ["Name", "Age", "City"],
+            ["Bob", None, "LA"],
+        ],
+        suffix=".xls",
+    )
+
+    assert "| Bob |  | LA |" in markdown
+    assert "NaN" not in markdown
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
